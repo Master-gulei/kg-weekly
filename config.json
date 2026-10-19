@@ -1,0 +1,82 @@
+{
+  "site": {
+    "name": "KG 每周前沿",
+    "week_window_days": 7
+  },
+  "safety": {
+    "site_access_enabled": true,
+    "minimum_request_interval_seconds": 10,
+    "automatic_requests_per_week": 30,
+    "user_requests_per_week": 12,
+    "stop_status_codes": [403, 429],
+    "allowed_hosts": ["export.arxiv.org", "arxiv.org", "rss.arxiv.org", "api.openalex.org"]
+  },
+  "discovery": {
+    "categories": ["cs.AI", "cs.CL", "cs.DB", "cs.IR", "cs.LG", "cs.SI"],
+    "search_phrases": [
+      "knowledge graph",
+      "knowledge graphs",
+      "knowledge graph embedding",
+      "entity linking",
+      "knowledge base",
+      "ontology",
+      "graph neural network",
+      "graph reasoning",
+      "graph retrieval",
+      "graphrag",
+      "kg"
+    ],
+    "max_results_per_query": 300
+  },
+  "keywords": {
+    "core": ["kg", "knowledge graph", "ai", "agent", "skill"],
+    "applied_signals": [
+      "applied", "real-world", "case study", "practical", "system",
+      "framework", "tool", "benchmark", "production", "deployment",
+      "dataset", "industrial", "platform", "prototype"
+    ],
+    "code_signals": [
+      "github", "open-source", "open source", "source code",
+      "code available", "code is available", "pseudo-code", "pseudocode",
+      "released code", "implementation code", "artifacts", "reproducible"
+    ],
+    "negative": []
+  },
+  "reliability": {
+    "institution_whitelist": [
+      "google", "deepmind", "meta", "microsoft", "amazon", "apple",
+      "nvidia", "openai", "anthropic", "mistral",
+      "stanford university", "massachusetts institute of technology",
+      "carnegie mellon", "tsinghua university", "peking university",
+      "eth zurich", "university of oxford", "university of cambridge",
+      "uc berkeley", "university of washington", "university of illinois",
+      "alibaba", "tencent", "baidu", "bytedance", "huawei", "ibm", "nec"
+    ],
+    "citation_tiers": [[1, 1], [5, 3], [20, 5], [100, 7]],
+    "author_impact_bonus_cap": 6
+  },
+  "openalex": {
+    "base_url": "https://api.openalex.org",
+    "doi_batch_size": 50,
+    "author_batch_size": 50,
+    "mailto": ""
+  },
+  "llm": {
+    "provider": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "api_key": "",
+    "timeout_seconds": 600,
+    "thinking_disabled": true,
+    "batch_size": 20,
+    "weekly_token_budget": 1000000
+  },
+  "pipeline": {
+    "top_cards": 50,
+    "top_deep": 12,
+    "enrich_min_relevance": 3,
+    "enrich_limit": 150,
+    "fulltext_max_characters": 40000
+  }
+}
