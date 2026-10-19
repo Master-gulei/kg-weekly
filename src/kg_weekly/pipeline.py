@@ -211,10 +211,10 @@ class WeeklyPipeline:
         card_papers = self.db.papers_with_cards(self.window_start_ts)
         stats = self.db.status()
         html = build_report(
-            self.config.get("site", {}).get("name", "KG 每周前沿"),
+            self.config.get("site", {}).get("name", "KG前沿论文解读"),
             self.label, deep_papers, card_papers, stats, self.config,
         )
-        path = self.out_dir / "{}-每周前沿-{}.html".format(
+        path = self.out_dir / "{}-前沿论文解读-{}.html".format(
             topic_file_prefix(self.config.get("_topic") or "kg"),
             self.window_end.strftime("%Y-%m-%d"))
         path.write_text(html, encoding="utf-8")

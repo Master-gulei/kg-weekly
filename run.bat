@@ -1,5 +1,5 @@
 @echo off
-rem KG 每周前沿 - Windows 入口
+rem KG前沿论文解读 - Windows 入口
 setlocal
 rem 输出为 UTF-8，把控制台切到 UTF-8 代码页避免中文乱码
 chcp 65001 >nul

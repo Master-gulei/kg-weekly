@@ -1,4 +1,4 @@
-# KG 每周前沿（kg-weekly）
+# KG前沿论文解读（kg-weekly）
 
 一个在 Windows 本地运行的小工具：每周一次，从 arXiv 抓取指定方向的**近 7 天新论文**（默认知识图谱方向，可换成任意关键词），用本地规则选出靠谱的文章（知名机构、作者历史影响力、引用数），再让 **deepseek-flash** 把它们变成「能听懂的中文知识」，最后生成一份**单文件静态 HTML 周报**。没有 Web 服务器、没有数据库后台、不需要任何第三方 Python 依赖（纯标准库）。
 
@@ -28,7 +28,7 @@
    run.bat run
    ```
 
-4. 打开周报：`out\KG-每周前沿-YYYY-MM-DD.html`
+4. 打开周报：`out\KG-前沿论文解读-YYYY-MM-DD.html`
 
    周报包含：Top 12 AI 精读（白话解读、生活类比、工作意义、靠谱度判断、术语、测验）+ 其余论文的中文卡片 + 可靠度徽章（机构 / 引用 / 评分 / 代码 / 应用型）+ 方法论说明与免责脚注。
 
@@ -49,12 +49,12 @@
 默认入口是知识图谱（kg）。想按其他关键词爬取、解读，在 `run` / `report` / `status` / `reset-budget` 上加 `--topic`：
 
 ```bat
-run.bat run --topic llm        rem 换成 llm 关键词：按 [llm] 爬取 arXiv、评分、AI 解读，输出 LLM-每周前沿-YYYY-MM-DD.html
+run.bat run --topic llm        rem 换成 llm 关键词：按 [llm] 爬取 arXiv、评分、AI 解读，输出 LLM-前沿论文解读-YYYY-MM-DD.html
 run.bat report --topic llm     rem 用已有数据重新生成 llm 入口的周报
 run.bat status --topic llm     rem 查看 llm 入口的状态
 ```
 
-- 自定义入口的搜索短语与核心评分关键词都换成输入的关键词；标题自动变为「LLM 每周前沿」
+- 自定义入口的搜索短语与核心评分关键词都换成输入的关键词；标题自动变为「LLM 前沿论文解读」
 - 每个入口使用**独立数据库** `data\papers-<关键词>.db`（默认入口仍是 `papers.db`），抓取周标记、周 token 预算彼此独立、互不干扰
 - AI 卡片与精读的提示词也会按关键词调整（如“与「llm」方向的关系”）
 - 提示：arXiv 论文元数据是英文，关键词建议用英文（如 `llm`、`rag`、`multimodal`、`temporal knowledge graph`）
@@ -63,7 +63,7 @@ run.bat status --topic llm     rem 查看 llm 入口的状态
 
 这条流水线本身不绑定知识图谱，`--topic` 是最快捷的切换方式，深度定制则改 `config.json`：
 
-- **一键换领域**：`run.bat run --topic "large language model"` 会把抓取短语与核心评分关键词换成该方向，周报标题、独立数据库、LLM 提示词全部跟随，输出 `LLM-每周前沿-YYYY-MM-DD.html`。
+- **一键换领域**：`run.bat run --topic "large language model"` 会把抓取短语与核心评分关键词换成该方向，周报标题、独立数据库、LLM 提示词全部跟随，输出 `LLM-前沿论文解读-YYYY-MM-DD.html`。
 - **多领域并行**：每个入口有独立的数据库与周 token 预算，每周可同时产出多个方向的周报，互不干扰（arXiv 礼貌间隔按所有入口共享）。
 - **深度定制**：改 `config.json` 的 `discovery.categories` / `search_phrases`（抓取范围）、`keywords.core`（评分关键词）、`reliability.institution_whitelist`（靠谱机构），就能追踪任意 arXiv 领域——药物发现、自动驾驶、AI4Science……把机构白名单换成对应领域的顶级机构后评分更准。
 

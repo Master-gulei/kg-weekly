@@ -115,7 +115,7 @@ def apply_topic(config: Dict[str, Any], topic: Optional[str]) -> Dict[str, Any]:
     config["discovery"]["search_phrases"] = [topic]
     config["keywords"]["core"] = [topic]
     display = topic.upper() if topic.isascii() else topic
-    config["site"]["name"] = "{} 每周前沿".format(display)
+    config["site"]["name"] = "{} 前沿论文解读".format(display)
     return config
 
 

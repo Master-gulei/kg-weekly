@@ -44,7 +44,7 @@ def output(value: Any) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="KG 每周前沿：arXiv 知识图谱方向论文周报生成器")
+    parser = argparse.ArgumentParser(description="KG前沿论文解读：arXiv 知识图谱方向论文周报生成器")
     parser.add_argument("--project", type=Path, default=Path.cwd(),
                         help="项目根目录（默认当前目录）")
     topic_help = "入口关键词：默认 kg（知识图谱入口）；输入其他关键词则按它爬取、解读并出独立周报"
