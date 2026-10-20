@@ -30,12 +30,22 @@ display:flex;align-items:center;justify-content:center;box-shadow:0 8px 22px rgb
 h1{font-size:32px;margin:8px 0 6px}
 @media(max-width:640px){.brand{gap:14px}.logo{width:54px;height:54px;border-radius:14px}.logo svg{width:32px;height:32px}}
 .sub{color:var(--muted);font-size:13.5px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:34px 0 6px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 22px;
-transition:transform .18s ease,box-shadow .18s ease}
-.stat:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.stat b{display:block;font-size:24px;color:var(--accent);font-variant-numeric:tabular-nums}
-.stat span{color:var(--muted);font-size:12px}
+/* 头部统计条：单面板三列，渐变数字色 + 彩色圆点标签 */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);margin:30px 0 4px;background:var(--card);
+border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(36,33,48,.06)}
+.stat{padding:18px 26px;transition:background .18s ease}
+.stat+.stat{border-left:1px solid var(--line)}
+.stat:hover{background:linear-gradient(180deg,rgba(108,76,241,.05),rgba(108,76,241,0))}
+.stat b{display:block;font-size:25px;font-weight:800;line-height:1.25;letter-spacing:-.01em;
+font-variant-numeric:tabular-nums;color:var(--accent)}
+.stat.gold b{color:var(--gold)}
+.stat.green b{color:var(--green)}
+.stat span{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;margin-top:4px}
+.stat span::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent-2);flex:0 0 auto}
+.stat.gold span::before{background:var(--gold)}
+.stat.green span::before{background:var(--green)}
+@media(max-width:640px){.stats{grid-template-columns:1fr}.stat{padding:14px 20px}
+.stat+.stat{border-left:0;border-top:1px solid var(--line)}}
 h2.sec{margin:56px 0 4px;font-size:21px;border-left:4px solid var(--accent);border-radius:2px;padding-left:12px}
 .sec-note{color:var(--muted);font-size:13px;margin:6px 0 20px}
 /* 折叠摘要行上的迷你徽章 */
@@ -114,6 +124,17 @@ transition:border-color .15s ease,box-shadow .15s ease}
 .one-liner{font-size:14px}
 .ext{color:var(--accent);font-size:13px;text-decoration:none}
 .ext:hover{text-decoration:underline}
+/* 按需精读：卡片右下角按钮 + 结果注入区 */
+.card-actions{display:flex;align-items:center;gap:16px;margin-top:12px}
+.deep-btn{font-family:inherit;font-size:13px;font-weight:600;color:#fff;cursor:pointer;border:0;
+border-radius:999px;padding:8px 18px;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+box-shadow:0 4px 12px rgba(108,76,241,.26);transition:transform .15s ease,box-shadow .15s ease,opacity .15s ease}
+.deep-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 7px 16px rgba(108,76,241,.34)}
+.deep-btn:disabled{cursor:progress;opacity:.6}
+.deep-btn.done{display:none}
+.deep-result{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+.deep-result .section h4{font-size:13.5px}
+.paper.has-deep{border-color:var(--accent-2)}
 footer{margin-top:64px;border-top:1px solid var(--line);padding-top:22px;color:var(--muted);font-size:12.5px}
 footer li{margin:4px 0 4px 18px}
 """
@@ -271,13 +292,66 @@ def _list_card(paper: Dict[str, Any]) -> str:
     card = paper.get("card") or {}
     title_zh = card.get("title_zh") or paper.get("title", "")
     one_liner = card.get("one_liner") or paper.get("abstract", "")[:220]
+    arxiv_id = str(paper["arxiv_id"])
     return (
-        '<article class="paper"><h3>{}</h3><p class="orig">{}</p>'
-        '<p class="one-liner">{}</p>{}<div><a class="ext" href="{}" target="_blank" '
-        'rel="noopener">打开原论文 ↗</a></div></article>'
-        .format(esc(title_zh), esc(paper.get("title", "")), esc(one_liner),
-                _badges(paper), esc(_safe_url(paper.get("abs_url"))))
+        '<article class="paper" data-id="{}"><h3>{}</h3><p class="orig">{}</p>'
+        '<p class="one-liner">{}</p>{}<div class="card-actions">'
+        '<a class="ext" href="{}" target="_blank" rel="noopener">打开原论文 ↗</a>'
+        '<button class="deep-btn" type="button" data-id="{}">AI 解读</button></div>'
+        '<div class="deep-result"></div></article>'
+        .format(esc(arxiv_id), esc(title_zh), esc(paper.get("title", "")), esc(one_liner),
+                _badges(paper), esc(_safe_url(paper.get("abs_url"))), esc(arxiv_id))
     )
+
+
+# 按需精读脚本：点击卡片按钮 → 本地服务 /api/deep-read → 结果渲染进卡片。
+# 单文件约束下脚本内联；离线打开（file://）时 fetch 失败会优雅降级为提示。
+_SCRIPT = """<script>
+(function(){
+  var API='/api/deep-read';
+  function esc(s){var d=document.createElement('div');d.textContent=(s==null?'':String(s));return d.innerHTML;}
+  function detailHTML(d){
+    var out='';
+    var paras=(d.plain_summary&&d.plain_summary.length)?d.plain_summary:[];
+    out+='<section class="section"><h4>这篇论文讲了什么</h4>'+paras.map(function(p){return '<p>'+esc(p)+'</p>';}).join('')+'</section>';
+    if(d.life_example){out+='<section class="section"><h4>先用生活中的例子理解</h4><p class="callout">'+esc(d.life_example)+'</p></section>';}
+    out+='<section class="section"><h4>它和你有什么关系</h4><div class="grid2"><div><b>对普通生活</b>'+esc(d.life_meaning||'暂无直接意义。')+'</div><div><b>对你的工作</b>'+esc(d.work_meaning||'暂无明确判断。')+'</div></div></section>';
+    if(d.how_to_apply&&d.how_to_apply.length){out+='<section class="section"><h4>你可以怎么用</h4><ul>'+d.how_to_apply.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul></section>';}
+    var r=d.reliability||{};
+    out+='<section class="section"><h4>这篇论文靠谱吗</h4><div class="reliability"><div><b>审核状态</b>'+esc(r.review_status||'预印本，未确认同行评审')+'</div><div><b>论文证据</b>'+esc(r.evidence||'未确认')+'</div><div><b>保留怀疑</b>'+esc(r.caution||'不要把单篇预印本当成定论。')+'</div></div></section>';
+    if(d.concepts&&d.concepts.length){out+='<section class="section"><h4>需要知道的几个词</h4>'+d.concepts.map(function(c){return '<div class="concept"><b>'+esc(c.name)+'</b>：'+esc(c.explanation)+'</div>';}).join('')+'</section>';}
+    if(d.quiz&&d.quiz.length){out+='<section class="section"><h4>看看你是否真的理解了</h4>'+d.quiz.map(function(q,i){return '<details class="quiz"><summary>'+(i+1)+'. '+esc(q.question)+'</summary><p>提示：'+esc(q.hint||'先用自己的话回答')+'<br>参考答案：'+esc(q.answer||'')+'</p></details>';}).join('')+'</section>';}
+    out+='<p class="orig">依据：'+esc(d.basis||'摘要')+'</p>';
+    return out;
+  }
+  function topic(){var t=document.body.getAttribute('data-topic');return t||'kg';}
+  document.querySelectorAll('.deep-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      if(btn.disabled){return;}
+      var art=btn.closest('article.paper');
+      var box=art.querySelector('.deep-result');
+      btn.disabled=true;btn.textContent='解读生成中…（约 1 分钟）';
+      box.innerHTML='<p class="sec-note">正在拉取全文并生成 AI 解读，请稍候…</p>';
+      fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({arxiv_id:btn.getAttribute('data-id'),topic:topic()})})
+      .then(function(resp){return resp.json().then(function(data){return {ok:resp.ok,data:data};});})
+      .then(function(r){
+        if(r.ok&&r.data.detail){
+          box.innerHTML=detailHTML(r.data.detail);
+          btn.classList.add('done');art.classList.add('has-deep');
+        }else{
+          box.innerHTML='<p class="sec-note">生成失败：'+esc((r.data&&r.data.error)||'未知错误')+'</p>';
+          btn.disabled=false;btn.textContent='重试 AI 解读';
+        }
+      })
+      .catch(function(){
+        box.innerHTML='<p class="sec-note">无法连接本地解读服务：请先运行 run.bat serve，然后通过 http://127.0.0.1:8000 打开周报再试。</p>';
+        btn.disabled=false;btn.textContent='重试 AI 解读';
+      });
+    });
+  });
+})();
+</script>"""
 
 
 def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
@@ -288,14 +362,13 @@ def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
     unique = len({str(p["arxiv_id"]) for p in card_papers}
                  | {str(p["arxiv_id"]) for p in deep_papers})
     stat_items = [
-        ("{}".format(unique), "本周入选论文"),
-        ("{}".format(len(deep_papers)), "AI 精读"),
-        ("{:,}".format(int(stats.get("llm_tokens_this_week") or 0)), "本周 LLM tokens"),
-        ("{:,}".format(int(stats.get("llm_budget_remaining") or 0)), "剩余 token 预算"),
+        ("{}".format(unique), "本周入选论文", ""),
+        ("{}".format(len(deep_papers)), "AI 精读", "gold"),
+        ("{:,}".format(int(stats.get("llm_tokens_this_week") or 0)), "本周 LLM tokens", "green"),
     ]
     stats_html = "".join(
-        '<div class="stat"><b>{}</b><span>{}</span></div>'.format(esc(v), esc(label_))
-        for v, label_ in stat_items)
+        '<div class="stat {}"><b>{}</b><span>{}</span></div>'.format(color, esc(v), esc(label_))
+        for v, label_, color in stat_items)
     deep_html = "".join(_deep_card(p, i) for i, p in enumerate(deep_papers, 1)) if deep_papers else \
         '<p class="sec-note">本周暂无 AI 精读内容。</p>'
     # 精读过的论文不再出现在下方列表里
@@ -314,7 +387,7 @@ def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
 <title>{} · {}</title>
 <style>{}</style>
 </head>
-<body>
+<body data-topic="{}">
 <div class="wrap">
 <header class="hero">
   <div class="brand">
@@ -333,7 +406,7 @@ def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
 {}
 
 <h2 class="sec">其余论文卡片</h2>
-<p class="sec-note">按综合评分排序，卡片由 AI 依据标题与摘要生成。</p>
+<p class="sec-note">按综合评分排序，卡片由 AI 依据标题与摘要生成；点卡片右下角「AI 解读」可为任意一篇生成完整精读（需先运行 run.bat serve）。</p>
 <div class="paper-list">{}</div>
 
 <footer>
@@ -348,12 +421,14 @@ def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
 </ul>
 </footer>
 </div>
+{}
 </body>
 </html>
-""".format(_FAVICON, esc(site_name), esc(label), _STYLE, _LOGO_SVG, esc(site_name),
+""".format(_FAVICON, esc(site_name), esc(label), _STYLE,
+           esc(str(config.get("_topic") or "kg")), _LOGO_SVG, esc(site_name),
            esc(label), esc(generated), stats_html, len(deep_papers), deep_html, list_html,
            esc("、".join(config.get("discovery", {}).get("categories", []))),
            int(config.get("site", {}).get("week_window_days", 7)),
            esc("、".join(core)),
            esc(str(config.get("llm", {}).get("model", "deepseek-flash"))),
-           esc("、".join(whitelist)))
+           esc("、".join(whitelist)), _SCRIPT)

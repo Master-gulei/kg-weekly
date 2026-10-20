@@ -12,6 +12,7 @@ from .db import Database
 from .fetch import SafeFetcher
 from .llm import LLMClient
 from .pipeline import WeeklyPipeline
+from .server import run_server
 
 
 def _open_database(project: Path, topic: Optional[str],
@@ -92,6 +93,9 @@ def main() -> None:
     prune_cmd = commands.add_parser("prune", help="清理过期的审计/用量/同步记录（默认保留 90 天）")
     prune_cmd.add_argument("--days", type=int, default=90, help="保留天数（默认 90，最小 1）")
     prune_cmd.add_argument("--topic", type=str, default=None, help=topic_help)
+    serve_cmd = commands.add_parser("serve", help="启动本地周报浏览与按需精读服务（仅监听 127.0.0.1）")
+    serve_cmd.add_argument("--port", type=int, default=8000, help="监听端口（默认 8000）")
+    serve_cmd.add_argument("--topic", type=str, default=None, help=topic_help)
     args = parser.parse_args()
 
     project = args.project.expanduser().resolve()
@@ -112,6 +116,10 @@ def main() -> None:
                             ("provider", "base_url", "model", "weekly_token_budget")},
                     **db.status()})
             db.close()
+            return
+        if args.command == "serve":
+            # 服务按请求惰性打开对应入口数据库，不在这里 build。
+            run_server(project, args.port, args.topic)
             return
         config, paths, db, pipeline = build(project, args.topic)
         try:

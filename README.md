@@ -3,7 +3,8 @@
 > 一个在 Windows 本地运行的小工具：每周一次，从 arXiv 抓取指定方向的**近 7 天新论文**
 > （默认知识图谱方向，可换成任意关键词），用本地规则选出靠谱的文章（知名机构、作者历史
 > 影响力、引用数），再让 **deepseek-flash** 把它们变成「能听懂的中文知识」，最后生成一份
-> **单文件静态 HTML 周报**。没有 Web 服务器、没有数据库后台、不需要任何第三方 Python 依赖。
+> **单文件静态 HTML 周报**。没有数据库后台、不需要任何第三方 Python 依赖；可选本地服务
+> （`run.bat serve`，仅 127.0.0.1）用于「AI 解读」按钮的按需精读。
 
 **🪟 Windows 本地** · **🐍 纯 Python 标准库（零依赖）** · **📄 单文件 HTML 周报（内联 CSS/SVG 图标）** · **💸 周成本约 ¥0.15**
 
@@ -16,6 +17,7 @@
 | 🤖 AI 中文解读 | Top 12 拉取全文精读：白话总结、生活类比、生活与工作意义、靠谱度、术语、自测题；多账号失败自动切换 |
 | 🎖️ 可靠度徽章 | 每篇论文标注 机构 / 引用 / 评分 / 代码 / 应用型，一眼判断成色 |
 | 📊 单文件周报 | 内联 CSS + SVG 图标，零外部资源，浏览器直接打开即可分享 |
+| 🔍 按需精读 | 其余论文卡片带「AI 解读」按钮：本地起个服务，点击即生成与 Top 12 同款的深度解读，结果入库缓存 |
 | 🛡️ 克制联网 | 域名白名单、周请求预算、最小间隔、熔断保护、跨平台文件锁 |
 
 ## 目录
@@ -61,6 +63,14 @@
 
    周报包含：Top 12 AI 精读（白话解读、生活类比、工作意义、靠谱度判断、术语、测验）+ 其余论文的中文卡片 + 可靠度徽章（机构 / 引用 / 评分 / 代码 / 应用型）+ 方法论说明与免责脚注。
 
+5. 🔍 **按需精读（可选）**：其余论文卡片上有「AI 解读」按钮，点一下就能为任意一篇生成与 Top 12 同款的深度解读：
+
+   ```bat
+   run.bat serve
+   ```
+
+   然后用浏览器打开它打印的 `http://127.0.0.1:8000`，在页面里点「AI 解读」即可。服务只监听本机（不对外网开放），API Key 只留在本机进程，不会写入任何 HTML 文件。
+
 ## 📋 命令一览
 
 | 命令 | 作用 |
@@ -69,6 +79,7 @@
 | `run.bat run --force` | 忽略「本周已抓取」标记，强制重新抓取 |
 | `run.bat run --dry-run` | 只校验配置并输出状态，不触网 |
 | `run.bat report` | 用已有数据重新生成 HTML，不访问网络 |
+| `run.bat serve` | 本地起周报浏览 + 按需精读服务（仅监听 127.0.0.1），默认端口 8000；可 `--port` 换端口、`--topic` 指定入口 |
 | `run.bat status` | 论文数 / LLM 本周用量 / 请求预算 / 访问状态 |
 | `run.bat reset-budget` | 手动重置周 token 预算计数 |
 | `run.bat prune --days 90` | 清理过期审计/用量/同步记录（默认保留 90 天；可加 `--topic` 清理指定入口） |
@@ -76,11 +87,12 @@
 
 ### 🔑 关键词入口（--topic）
 
-默认入口是知识图谱（kg）。想按其他关键词爬取、解读，在 `run` / `report` / `status` / `reset-budget` / `prune` / `enable-access` 上加 `--topic`：
+默认入口是知识图谱（kg）。想按其他关键词爬取、解读，在 `run` / `report` / `serve` / `status` / `reset-budget` / `prune` / `enable-access` 上加 `--topic`：
 
 ```bat
 run.bat run --topic llm        rem 换成 llm 关键词：按 [llm] 爬取 arXiv、评分、AI 解读，输出 LLM-前沿论文解读-YYYY-MM-DD.html
 run.bat report --topic llm     rem 用已有数据重新生成 llm 入口的周报
+run.bat serve --topic llm      rem 本地服务默认打开 llm 入口的最新周报
 run.bat status --topic llm     rem 查看 llm 入口的状态
 ```
 
@@ -108,7 +120,7 @@ run.bat status --topic llm     rem 查看 llm 入口的状态
    - **靠谱度**：机构白名单（Google、DeepMind、Meta、清华、北大、阿里、腾讯等 28 个）+ 作者累计被引（对数缩放、封顶）+ 引用数分层 + venue 信息。
 4. 💬 **中文卡片**：deepseek-flash 批量生成（20 篇/批，严格 JSON + arXiv ID 完整性校验），最多 Top 50 篇。
 5. 🧠 **AI 精读**：对 Top 12 拉取 HTML 全文并缓存，生成白话总结 / 生活类比 / 生活与工作意义 / 靠谱度 / 术语 / 自测题。
-6. 📊 **周报**：生成单文件 HTML（内联 CSS，无外部资源）。
+6. 📊 **周报**：生成单文件 HTML（内联 CSS，无外部资源；其余论文卡片带「AI 解读」按钮，配合 `run.bat serve` 可按需精读任意论文）。
 
 ## 💰 成本控制
 
@@ -131,7 +143,7 @@ kg-weekly/
 ├── README.md / DESIGN.md    # 使用文档与设计说明
 ├── src/kg_weekly/
 │   ├── __init__.py          # 包信息（名称与版本）
-│   ├── cli.py               # 命令行入口（run/report/status/reset-budget/enable-access/prune）
+│   ├── cli.py               # 命令行入口（run/report/serve/status/reset-budget/enable-access/prune）
 │   ├── config.py            # 配置加载与校验（含 --topic/--categories 入口、local_config.json 合并）
 │   ├── db.py                # SQLite schema 与查询（论文/用量/审计/周标记/熔断）
 │   ├── fetch.py             # 跨平台文件锁 + 白名单 + 周请求预算 + 熔断 + 审计
@@ -140,9 +152,10 @@ kg-weekly/
 │   ├── ranking.py           # 相关性/靠谱度评分
 │   ├── llm.py               # OpenAI 兼容 LLM 客户端（deepseek-flash，关思考模式，多账号故障转移）
 │   ├── pipeline.py          # 六步周流水线编排（幂等可重入）
-│   └── report.py            # 单文件 HTML 周报生成（折叠精读、内联 SVG 图标）
+│   ├── report.py            # 单文件 HTML 周报生成（折叠精读、内联 SVG 图标、按需精读按钮）
+│   └── server.py            # 本地周报浏览与按需精读服务（仅 127.0.0.1）
 └── 仅本地目录（已被 .gitignore 排除，不入仓库）：
-    ├── tests/               # 101 个离线测试（mock，不触网）
+    ├── tests/               # 118 个离线测试（mock，不触网）
     ├── data/                # SQLite 数据库、自动备份（.bak）与锁
     ├── out/                 # 周报输出目录
     └── local_config.json    # 本机私有配置（API Key）
@@ -174,6 +187,8 @@ kg-weekly/
 - 精读数量受 user 请求预算约束（`top_deep ≤ user_requests_per_week`，配置校验强制）
 - `run.bat prune` 清理过期审计/用量/同步记录（默认保留 90 天），防止审计表无限增长
 - 周报外链只允许 http/https 协议（防污染链接注入 `javascript:` 等）
+- `run.bat serve` 只绑定 127.0.0.1（不监听外网）；静态文件解析拒绝路径穿越、只服务 out/ 下的 HTML；API 请求体上限 64 KB
+- 按需精读复用流水线同一套保护（周 token 预算、user 请求预算、最小间隔、熔断），API Key 只留在本机进程，永不写入 HTML 文件
 
 注意事项：
 
@@ -189,7 +204,7 @@ kg-weekly/
 python -m unittest discover -s tests -v
 ```
 
-101 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝与未闭合 script 恢复）、配置校验（含档位乱序/非整数/精读超预算/LLM 地址白名单）、数据库（含周预算自动前滚、跨入口请求间隔、审计清理与在线备份）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言、卡片/精读字段收敛、多账号故障转移、尾部垃圾 JSON 容忍、响应体上限、地址白名单、提示词去重）、OpenAlex 解析、周报 HTML 结构（含去重统计与外链协议白名单）、CLI 命令（含 --categories 持久化与 prune）与完整流水线（含运行前自动备份）。
+118 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝与未闭合 script 恢复）、配置校验（含档位乱序/非整数/精读超预算/LLM 地址白名单）、数据库（含周预算自动前滚、跨入口请求间隔、审计清理与在线备份）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言、卡片/精读字段收敛、多账号故障转移、尾部垃圾 JSON 容忍、响应体上限、地址白名单、提示词去重）、OpenAlex 解析、周报 HTML 结构（含去重统计、外链协议白名单与按需解读按钮）、CLI 命令（含 --categories 持久化、prune 与 serve --topic 透传）、本地服务（含路径穿越防护、按需精读 API、缓存复用、同篇并发去重与非法 Content-Length 拒绝）与完整流水线（含运行前自动备份）。
 
 ## ❓ 常见问题
 
@@ -199,6 +214,7 @@ python -m unittest discover -s tests -v
 - ⚙️ **`pipeline.top_deep 不能超过 safety.user_requests_per_week`**：每篇精读要拉一次 HTML 全文（计入 user 请求预算），调大精读数量时需同步调大 `safety.user_requests_per_week`。
 - 📭 **`arXiv 返回 0 条结果`**：查询异常（如短语语法问题），检查 `discovery.search_phrases`。
 - 🆕 **新论文引用数很低**：正常现象。刚发布一周的论文普遍 0 引用，此时靠谱度主要由机构白名单与作者历史影响力决定，周报脚注里有同样说明。
+- 🔍 **点「AI 解读」提示无法连接本地服务**：按需精读需要本地服务中转 API Key，先运行 `run.bat serve`，再通过它打印的 `http://127.0.0.1:8000` 打开周报（直接双击 HTML 文件时该按钮不可用）。
 
 ## ⚠️ 免责声明
 
