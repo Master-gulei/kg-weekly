@@ -66,10 +66,12 @@
 5. 🔍 **按需精读（可选）**：其余论文卡片上有「AI 解读」按钮，点一下就能为任意一篇生成与 Top 12 同款的深度解读：
 
    ```bat
-   run.bat serve
+   serve.bat
    ```
 
-   然后用浏览器打开它打印的 `http://127.0.0.1:8000`，在页面里点「AI 解读」即可。服务只监听本机（不对外网开放），API Key 只留在本机进程，不会写入任何 HTML 文件。
+   双击 `serve.bat`（或直接双击 `run.bat`——无参数时默认启动解读服务，等价命令 `run.bat serve`）会启动服务并自动用浏览器打开 `http://127.0.0.1:8000`，在页面里点「AI 解读」即可。服务只监听本机（不对外网开放），API Key 只留在本机进程，不会写入任何 HTML 文件。
+
+   注意：必须通过 `http://127.0.0.1:8000` 打开周报，「AI 解读」按钮才可用——直接双击 `out\` 里的 HTML 文件（file://）时按钮会提示先启动服务。
 
 ## 📋 命令一览
 
@@ -80,6 +82,8 @@
 | `run.bat run --dry-run` | 只校验配置并输出状态，不触网 |
 | `run.bat report` | 用已有数据重新生成 HTML，不访问网络 |
 | `run.bat serve` | 本地起周报浏览 + 按需精读服务（仅监听 127.0.0.1），默认端口 8000；可 `--port` 换端口、`--topic` 指定入口 |
+| 双击 `serve.bat` | 同 `run.bat serve`（固定 8000 端口与默认入口），并自动用浏览器打开 127.0.0.1:8000；自定义端口/入口请用命令行 `run.bat serve --port N --topic X`；服务异常退出时窗口会停住显示错误 |
+| 双击 `run.bat`（无参数） | 同 `run.bat serve`（默认启动解读服务并自动开浏览器）；带子命令时行为不变（`run` / `status` / `prune` …） |
 | `run.bat status` | 论文数 / LLM 本周用量 / 请求预算 / 访问状态 |
 | `run.bat reset-budget` | 手动重置周 token 预算计数 |
 | `run.bat prune --days 90` | 清理过期审计/用量/同步记录（默认保留 90 天；可加 `--topic` 清理指定入口） |
@@ -138,7 +142,8 @@ deepseek-flash 官方价（2026-10）：输入 ¥2/百万（高峰）、¥1/百�
 
 ```
 kg-weekly/
-├── run.bat                  # Windows 入口（设置 PYTHONPATH 后调用 kg_weekly.cli）
+├── run.bat                  # Windows 入口（设置 PYTHONPATH 后调用 kg_weekly.cli；双击无参数时默认启动解读服务）
+├── serve.bat                # 解读服务入口（双击启动 + 服务就绪后自动开浏览器）
 ├── config.json              # 分类/短语/关键词/白名单/预算/LLM 全部配置
 ├── README.md / DESIGN.md    # 使用文档与设计说明
 ├── src/kg_weekly/
@@ -214,7 +219,9 @@ python -m unittest discover -s tests -v
 - ⚙️ **`pipeline.top_deep 不能超过 safety.user_requests_per_week`**：每篇精读要拉一次 HTML 全文（计入 user 请求预算），调大精读数量时需同步调大 `safety.user_requests_per_week`。
 - 📭 **`arXiv 返回 0 条结果`**：查询异常（如短语语法问题），检查 `discovery.search_phrases`。
 - 🆕 **新论文引用数很低**：正常现象。刚发布一周的论文普遍 0 引用，此时靠谱度主要由机构白名单与作者历史影响力决定，周报脚注里有同样说明。
-- 🔍 **点「AI 解读」提示无法连接本地服务**：按需精读需要本地服务中转 API Key，先运行 `run.bat serve`，再通过它打印的 `http://127.0.0.1:8000` 打开周报（直接双击 HTML 文件时该按钮不可用）。
+- 🔍 **点「AI 解读」提示无法连接本地服务**：按需精读需要本地服务中转 API Key。双击 `serve.bat` 启动服务，再通过它自动打开的 `http://127.0.0.1:8000` 浏览周报（直接双击 HTML 文件时该按钮不可用）。
+- 🪟 **双击 `run.bat` 一闪而过（已修复）**：无参数双击现在默认启动解读服务（等价 `run.bat serve`），窗口会保持打开并自动开浏览器；带子命令时（如 `run.bat run`、`run.bat status`）行为不变，请在命令行里运行。
+- 🔁 **服务已在运行时再次双击 `run.bat`/`serve.bat` 提示端口占用**：此时服务本来就在运行，浏览器也会照常打开周报，那个报错窗口直接关掉即可（不要多开服务）。
 
 ## ⚠️ 免责声明
 
