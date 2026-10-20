@@ -64,6 +64,7 @@
   "llm": {
     "provider": "deepseek",
     "base_url": "https://api.deepseek.com",
+    "allowed_hosts": ["api.deepseek.com"],
     "model": "deepseek-flash",
     "api_key_env": "DEEPSEEK_API_KEY",
     "api_key": "",

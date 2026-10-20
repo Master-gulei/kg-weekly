@@ -38,6 +38,8 @@ AI 精读（Top 12 拉取 HTML 全文并缓存）
 
 - 域名白名单（arxiv.org / export.arxiv.org / rss.arxiv.org / api.openalex.org）+ 仅 https + **拒绝跟随重定向**（白名单只校验初始 URL，跟随会绕过校验）。
 - 响应体上限 20 MB，读满即中断，异常上游无法耗尽内存。
+- LLM 响应体上限 10 MB；`llm.base_url` 必须命中 `llm.allowed_hosts` 白名单（LLM 请求不走站点白名单通道，单独校验）。
+- 每次 `run` 前用 SQLite 在线备份 API 把数据库快照到 `data/*.db.bak`，失败不阻塞主流程。
 - 周请求预算（自动 30 次 / 用户 12 次）与最小间隔（默认 10 秒，arXiv 要求 ≥3 秒），预算触顶即停。
 - 内容类型异常或 403/429 自动熔断，人工确认后 `enable-access --confirm` 恢复。
 - 跨进程文件锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`）。

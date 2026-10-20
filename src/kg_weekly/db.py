@@ -282,6 +282,18 @@ class Database:
         self.con.commit()
         return pruned
 
+    def backup(self, target: Path) -> Path:
+        """在线备份当前数据库到指定路径（SQLite backup API，写库时仍可安全调用）。"""
+        target = Path(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup_con = sqlite3.connect(str(target))
+        try:
+            self.con.backup(backup_con)
+        finally:
+            # with 块只提交/回滚事务，不关闭连接；Windows 上必须显式关闭才能释放文件锁
+            backup_con.close()
+        return target
+
     # ---------- 论文 ----------
 
     def upsert_paper(self, paper: Dict[str, Any]) -> str:

@@ -223,8 +223,17 @@ class WeeklyPipeline:
 
     # ---------- 总入口 ----------
 
+    def _backup_db(self) -> Dict[str, Any]:
+        """运行前把数据库快照到 data\papers.db.bak；失败不阻塞主流程。"""
+        try:
+            self.db.backup(self.db.path.with_suffix(".db.bak"))
+            return {"status": "success"}
+        except Exception as exc:
+            return {"status": "failed", "error": "{}: {}".format(type(exc).__name__, exc)}
+
     def run(self, force: bool = False) -> Dict[str, Any]:
         steps: Dict[str, Any] = {}
+        steps["backup"] = self._backup_db()
         steps["fetch"] = self.fetch_arxiv(force=force)
         steps["openalex"] = self.enrich_openalex()
         steps["score"] = self.score_papers()

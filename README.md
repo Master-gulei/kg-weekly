@@ -100,6 +100,7 @@ run.bat status --topic llm     rem 查看 llm 入口的状态
 
 ## 🔄 每周流水线做了什么
 
+0. 💾 **备份**：运行前把数据库快照到 `data\papers.db.bak`（SQLite 在线备份 API），失败不阻塞主流程。
 1. 📡 **抓取**：一次 arXiv API 查询（cs.AI / cs.CL / cs.DB / cs.IR / cs.LG / cs.SI 分类 + 11 个 KG 相关短语 + 近 7 天 submittedDate 窗口），返回 0 条会报错而不是假成功。
 2. 🔎 **OpenAlex 增强**：只对相关度达标的论文（最多 150 篇）按 DOI 批量查引用数、venue、作者机构、作者历史影响力（免费 API，无需 key；单个批次失败不影响主流程）。
 3. 🏅 **评分**：总分 = 相关性 × 0.7 + 靠谱度 × 0.3。
@@ -141,8 +142,8 @@ kg-weekly/
 │   ├── pipeline.py          # 六步周流水线编排（幂等可重入）
 │   └── report.py            # 单文件 HTML 周报生成（折叠精读、内联 SVG 图标）
 └── 仅本地目录（已被 .gitignore 排除，不入仓库）：
-    ├── tests/               # 96 个离线测试（mock，不触网）
-    ├── data/                # SQLite 数据库、缓存、锁
+    ├── tests/               # 101 个离线测试（mock，不触网）
+    ├── data/                # SQLite 数据库、自动备份（.bak）与锁
     ├── out/                 # 周报输出目录
     └── local_config.json    # 本机私有配置（API Key）
 ```
@@ -153,7 +154,7 @@ kg-weekly/
 - `discovery.categories / search_phrases`：抓取范围，可自行增删 KG 相关短语
 - `keywords.core / applied_signals / code_signals`：评分信号词
 - `reliability.institution_whitelist`：可信机构白名单
-- `llm`：模型、地址、Key、周预算；兼容 OpenAI 格式接口（DeepSeek / 通义 / Kimi 等）。注意 `thinking`（关思考模式）是 DeepSeek 专有字段，换其他服务时请把 `thinking_disabled` 设为 `false`
+- `llm`：模型、地址（须在 `allowed_hosts` 白名单内）、Key、周预算；兼容 OpenAI 格式接口（DeepSeek / 通义 / Kimi 等）。注意 `thinking`（关思考模式）是 DeepSeek 专有字段，换其他服务时请把 `thinking_disabled` 设为 `false`
 - `pipeline.top_cards / top_deep`：卡片数量（默认 50）与精读数量（默认 12）
 - `local_config.json`（可选，本机私有、已被 .gitignore 忽略）：覆盖 `config.json` 的字段，用于存放 `llm.api_key` 等敏感值，避免把 Key 写进仓库或命令行历史
 
@@ -161,6 +162,8 @@ kg-weekly/
 
 - 只允许访问白名单域名（arxiv.org、export.arxiv.org、rss.arxiv.org、api.openalex.org），且拒绝跟随重定向（白名单只校验初始 URL，跟随会绕过校验）
 - 响应体上限 20 MB，异常上游无法耗尽内存
+- LLM 响应体上限 10 MB；`llm.base_url` 必须命中 `llm.allowed_hosts` 白名单（LLM 请求不走站点白名单通道，单独校验）
+- 每次 `run` 前自动用 SQLite 在线备份 API 快照数据库到 `data\*.db.bak`，失败不阻塞主流程
 - 周请求预算（自动 30 次 / 用户 12 次）与最小间隔（默认 10 秒，arXiv 要求 ≥3 秒）
 - 内容类型异常或 403/429 自动熔断，人工确认后 `enable-access --confirm` 恢复
 - 跨进程文件锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`）
@@ -186,7 +189,7 @@ kg-weekly/
 python -m unittest discover -s tests -v
 ```
 
-96 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝与未闭合 script 恢复）、配置校验（含档位乱序/非整数/精读超预算）、数据库（含周预算自动前滚、跨入口请求间隔与审计清理）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言、卡片/精读字段收敛、多账号故障转移、尾部垃圾 JSON 容忍）、OpenAlex 解析、周报 HTML 结构（含去重统计与外链协议白名单）、CLI 命令（含 --categories 持久化与 prune）与完整流水线。
+101 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝与未闭合 script 恢复）、配置校验（含档位乱序/非整数/精读超预算/LLM 地址白名单）、数据库（含周预算自动前滚、跨入口请求间隔、审计清理与在线备份）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言、卡片/精读字段收敛、多账号故障转移、尾部垃圾 JSON 容忍、响应体上限、地址白名单、提示词去重）、OpenAlex 解析、周报 HTML 结构（含去重统计与外链协议白名单）、CLI 命令（含 --categories 持久化与 prune）与完整流水线（含运行前自动备份）。
 
 ## ❓ 常见问题
 

@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 
 class ConfigError(ValueError):
@@ -73,6 +74,15 @@ def load_config(project: Path) -> Dict[str, Any]:
     base_url = str(llm.get("base_url", ""))
     if base_url and not base_url.startswith("https://"):
         raise ConfigError("llm.base_url 必须是 https 地址")
+    # LLM 调用不走 SafeFetcher（不占用站点请求预算），必须单独白名单校验地址。
+    llm_hosts = {str(host).strip().lower() for host in (llm.get("allowed_hosts") or [])
+                 if str(host).strip()}
+    if not llm_hosts:
+        raise ConfigError("llm.allowed_hosts 必须至少包含 base_url 的主机名")
+    if base_url:
+        host = (urlparse(base_url).hostname or "").lower()
+        if host not in llm_hosts:
+            raise ConfigError("llm.base_url 主机不在 llm.allowed_hosts 白名单内：{}".format(host))
     if _config_int(llm, "weekly_token_budget", 0, "llm.weekly_token_budget") <= 0:
         raise ConfigError("weekly_token_budget 必须大于 0")
     pipeline = data.get("pipeline") or {}
@@ -93,11 +103,10 @@ def project_paths(project: Path) -> Dict[str, Path]:
     paths = {
         "project": project,
         "data": project / "data",
-        "cache": project / "data" / "cache",
         "database": project / "data" / "papers.db",
         "out": project / "out",
     }
-    for key in ("data", "cache", "out"):
+    for key in ("data", "out"):
         paths[key].mkdir(parents=True, exist_ok=True)
     return paths
 

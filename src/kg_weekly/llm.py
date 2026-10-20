@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from .db import Database
 
@@ -74,6 +75,9 @@ class BudgetExceeded(RuntimeError):
 # 卡片字段的合法取值，用于收敛模型输出的异常内容。
 ALLOWED_YES_NO = ("是", "否", "不确定")
 ALLOWED_WORTH = ("A", "B", "C")
+
+# 单次响应体上限：与 SafeFetcher 同思路，防止异常上游返回超大响应耗尽内存。
+_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 
 def _clean_text(value: Any, limit: int) -> str:
@@ -247,6 +251,16 @@ class LLMClient:
     def _call_once(self, system: str, prompt: str, task_type: str, provider: str,
                    api_key: str, base_url: str, model: str,
                    account_id: Optional[int], label: str) -> str:
+        # LLM 调用不走 SafeFetcher（不占用站点请求预算），因此单独校验地址白名单，
+        # 覆盖 config 默认账号与库中账号的 base_url 覆盖值。
+        allowed_hosts = {str(h).strip().lower()
+                         for h in (self.config.get("llm") or {}).get("allowed_hosts") or []
+                         if str(h).strip()}
+        parsed = urlparse(base_url)
+        if parsed.scheme != "https" or (parsed.hostname or "").lower() not in allowed_hosts:
+            message = "LLM 地址未通过白名单校验：{}".format(base_url)
+            self.db.record_provider_result(account_id, label, task_type, 0, False, message)
+            raise LLMCallFailed(message)
         body: Dict[str, Any] = {
             "model": model,
             "messages": [
@@ -271,7 +285,13 @@ class LLMClient:
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                value = json.loads(response.read().decode("utf-8", errors="replace"))
+                # 限量读取：超大响应先拒绝而不是先完整入内存
+                raw = response.read(_MAX_RESPONSE_BYTES + 1)
+                if len(raw or b"") > _MAX_RESPONSE_BYTES:
+                    message = "响应体过大（>{:,} 字节），已拒绝".format(_MAX_RESPONSE_BYTES)
+                    self.db.record_provider_result(account_id, label, task_type, 0, False, message)
+                    raise LLMCallFailed(message)
+                value = json.loads(raw.decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as exc:
             message = "HTTP {}: {}".format(exc.code, exc.read().decode("utf-8", errors="replace")[:300])
             cooldown = 3600 if exc.code in (429, 402) or "limit" in message.lower() else self.failure_cooldown_seconds
@@ -279,6 +299,10 @@ class LLMClient:
             raise LLMCallFailed(message)
         except urllib.error.URLError as exc:
             message = "网络错误：{}".format(exc.reason)
+            self.db.record_provider_result(account_id, label, task_type, 0, False, message)
+            raise LLMCallFailed(message)
+        except json.JSONDecodeError as exc:
+            message = "响应不是合法 JSON：{}".format(exc)[:300]
             self.db.record_provider_result(account_id, label, task_type, 0, False, message)
             raise LLMCallFailed(message)
         output = str(value.get("choices", [{}])[0].get("message", {}).get("content", ""))
@@ -334,7 +358,9 @@ class LLMClient:
                 "arxiv_id：{}".format(arxiv_id),
                 _paper_material(paper),
             ]))
-        prompt = self.card_system + "\n\n=== 论文（共 {} 篇）===\n".format(len(papers))
+        # system 提示词已作为 messages["system"] 单独携带，user 消息只放论文素材，
+        # 避免同一段提示词被重复计费。
+        prompt = "=== 论文（共 {} 篇）===\n".format(len(papers))
         prompt += "\n\n---\n\n".join(materials)
         output = self.chat(self.card_system, prompt, "cards")
         value = _extract_json(output)
@@ -382,7 +408,8 @@ class LLMClient:
         material = _paper_material(paper)
         if full_text:
             material += "\n\n=== {} ===\n{}".format(source, full_text[:max_chars])
-        prompt = self.detail_system + "\n\n=== 材料 ===\n" + material
+        # system 提示词已作为 messages["system"] 单独携带，user 消息只放论文材料。
+        prompt = "=== 材料 ===\n" + material
         output = self.chat(self.detail_system, prompt, "deep_read")
         value = _extract_json(output)
         value["model"] = self.model
