@@ -28,6 +28,8 @@ AI 精读（Top 12 拉取 HTML 全文并缓存）
 
 - **零 JS 折叠**：精读卡片用原生 `<details>/<summary>` 折叠，默认只显示一句话摘要，点击展开完整解读。单文件无脚本，安全性与兼容性最好。
 - **--topic 关键词入口**：`apply_topic` 把搜索短语与核心评分关键词替换为输入关键词；每个入口使用独立 SQLite（`data/papers-<slug>.db`），抓取周标记与周 token 预算彼此隔离，默认 kg 入口不受影响；LLM 提示词按关键词参数化，默认 kg 措辞与历史完全一致。
+- **--categories 分类覆盖**：非 CS 领域（如 q-bio）追踪时用 `--categories` 覆盖 arXiv 分类，按入口持久化到 settings（`default` 恢复配置默认），后续 `report`/`status` 自动沿用同一覆盖。
+- **多账号故障转移**：LLM 调用按优先级遍历可用账号链（库中账号 → config/env 默认账号），失败自动顺延并记录冷却；单账号限流/网络错误不再导致整批卡片或精读失败。
 - **本机密钥**：`local_config.json`（已被 .gitignore 忽略）浅合并覆盖 `config.json`，用于存放 API Key；Key 不进仓库、不出现命令行历史，CLI 输出不回显。
 - **跨入口礼貌间隔**：arXiv 最小请求间隔按本机**所有**入口数据库的最新请求时间计算，连续跑多个入口也不会违背间隔保证。
 - **LLM 输出收敛**：卡片字段枚举校验、精读结构规范化（`_normalize_detail`），畸形响应被过滤后才入库，渲染永不因模型输出形状崩溃。
@@ -40,6 +42,9 @@ AI 精读（Top 12 拉取 HTML 全文并缓存）
 - 内容类型异常或 403/429 自动熔断，人工确认后 `enable-access --confirm` 恢复。
 - 跨进程文件锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`）。
 - LLM 周预算按自然周自动前滚，每次调用前检查累计用量。
+- 精读数量受 user 模式请求预算约束（top_deep ≤ user_requests_per_week，配置校验强制）。
+- `prune` 命令清理过期审计/用量/同步记录（默认保留 90 天），防止审计表无限增长。
+- 周报外链只允许 http/https 协议；模型输出 JSON 用 raw_decode 提取首个合法对象，容忍尾部垃圾。
 - 周报脚注明确：arXiv 预印本不等于同行评审；AI 内容仅依据给定材料，重要结论请核对原文。
 
 ## 不做的事情
@@ -53,7 +58,7 @@ AI 精读（Top 12 拉取 HTML 全文并缓存）
 ## 数据与模块
 
 - `src/kg_weekly/fetch.py`：白名单、间隔、周请求预算、跨进程锁、审计与熔断。
-- `src/kg_weekly/arxiv.py`：arXiv 查询 URL 构造与 Atom 解析（含 comment 字段）。
+- `src/kg_weekly/arxiv.py`：arXiv 查询 URL 构造与 Atom 解析（含 comment 字段），以及 HTML 全文提取（未闭合 script 兜底重解析）。
 - `src/kg_weekly/openalex.py`：引用数 / venue / 机构 / 作者历史影响力批量查询。
 - `src/kg_weekly/ranking.py`：相关性与靠谱度评分（关键词命中、应用型/代码信号、机构白名单、作者影响力、引用分层）。
 - `src/kg_weekly/llm.py`：OpenAI 兼容 LLM 客户端（deepseek-flash，强制关思考模式），账号选择与用量记录。

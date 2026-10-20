@@ -119,6 +119,16 @@ class PaperHTMLParser(HTMLParser):
 
 
 def extract_paper_html(payload: bytes) -> str:
+    text = payload.decode("utf-8", errors="replace")
     parser = PaperHTMLParser()
-    parser.feed(payload.decode("utf-8", errors="replace"))
+    parser.feed(text)
+    if parser.depth_skip:
+        # HTMLParser 对 script/style 启用 CDATA 模式：只找对应的闭合标签，未闭合时
+        # 其后所有内容（含正文标签）都会整体变成一次 handle_data，全部被跳过。
+        # 此时剔除 script/style 标签后重解析，让正文容器重新可见；残留的少量
+        # 脚本文本进入正文无害，远好于整篇正文丢失。
+        cleaned = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1\s*>", "", text)
+        cleaned = re.sub(r"(?is)<(script|style)\b[^>]*>", "", cleaned)
+        parser = PaperHTMLParser()
+        parser.feed(cleaned)
     return parser.text()

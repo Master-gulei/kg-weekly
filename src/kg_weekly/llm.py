@@ -123,10 +123,23 @@ def _normalize_detail(value: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
-    match = re.search(r"\{.*\}", text.strip(), re.S)
-    if not match:
-        raise LLMCallFailed("模型响应中没有 JSON")
-    return json.loads(match.group(0))
+    """从模型输出中提取首个合法 JSON 对象，容忍前后缀垃圾与嵌套花括号。
+
+    贪婪正则匹配到最后一个 `}`，模型输出尾部带垃圾时直接失败；
+    raw_decode 从第一个 `{` 开始逐步尝试，能精确切出第一个完整对象。
+    """
+    text = str(text).strip()
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise LLMCallFailed("模型响应中没有 JSON")
 
 
 def _paper_material(paper: Dict[str, Any]) -> str:
@@ -163,10 +176,15 @@ class LLMClient:
 
     # ---------- 账号与预算 ----------
 
-    def _pick_account(self) -> Optional[Dict[str, Any]]:
+    def _candidate_accounts(self) -> List[Optional[Dict[str, Any]]]:
+        """按优先级返回本次可尝试的账号链：库中可用账号在前，config/env 默认账号殿后。
+
+        前一个账号失败（限流/网络错误）时 chat() 顺延到下一个，实现故障转移；
+        默认账号用 None 占位，避免重复构建凭据。
+        """
         self.db.reset_due_provider_quotas()
         now = int(time.time())
-        eligible = []
+        candidates: List[Optional[Dict[str, Any]]] = []
         for account in self.db.provider_accounts(include_credentials=True):
             if not account.get("enabled"):
                 continue
@@ -175,15 +193,10 @@ class LLMClient:
             total = account.get("quota_total")
             if total is not None and float(total) - float(account.get("quota_used") or 0) <= 0:
                 continue
-            eligible.append(account)
-        if eligible:
-            return eligible[0]
+            candidates.append(account)
         if self.api_key:
-            return None  # 使用 config/env 默认账号
-        raise LLMUnavailable(
-            "没有可用的 AI 账号；请配置 llm.api_key 或设置环境变量 {}".format(
-                self.config.get("llm", {}).get("api_key_env", "DEEPSEEK_API_KEY"))
-        )
+            candidates.append(None)
+        return candidates
 
     def _check_budget(self) -> None:
         used = self.db.llm_usage_this_week()
@@ -197,22 +210,43 @@ class LLMClient:
 
     def chat(self, system: str, prompt: str, task_type: str) -> str:
         self._check_budget()
-        account = self._pick_account()
-        if account is not None:
-            credentials = account.get("credentials") or {}
-            provider = str(account.get("provider", "")).lower()
-            api_key = str(credentials.get("api_key", "")).strip()
-            base_url = str(credentials.get("base_url", self.base_url)).rstrip("/")
-            model = str(credentials.get("model", self.model))
-            account_id: Optional[int] = int(account["id"])
-            label = "{}:{}".format(account.get("provider"), account.get("account_name"))
-        else:
-            provider, api_key, base_url, model = self.provider, self.api_key, self.base_url, self.model
-            account_id, label = None, "default"
-        if provider == "mock":
-            return self._mock_chat(task_type, prompt)
-        if not api_key:
-            raise LLMUnavailable("账号缺少 api_key 凭据")
+        candidates = self._candidate_accounts()
+        if not candidates:
+            raise LLMUnavailable(
+                "没有可用的 AI 账号；请配置 llm.api_key 或设置环境变量 {}".format(
+                    self.config.get("llm", {}).get("api_key_env", "DEEPSEEK_API_KEY"))
+            )
+        last_error = ""
+        for account in candidates:
+            if account is not None:
+                credentials = account.get("credentials") or {}
+                provider = str(account.get("provider", "")).lower()
+                api_key = str(credentials.get("api_key", "")).strip()
+                base_url = str(credentials.get("base_url", self.base_url)).rstrip("/")
+                model = str(credentials.get("model", self.model))
+                account_id: Optional[int] = int(account["id"])
+                label = "{}:{}".format(account.get("provider"), account.get("account_name"))
+            else:
+                provider, api_key, base_url, model = self.provider, self.api_key, self.base_url, self.model
+                account_id, label = None, "default"
+            if provider == "mock":
+                return self._mock_chat(task_type, prompt)
+            if not api_key:
+                message = "账号缺少 api_key 凭据"
+                self.db.record_provider_result(account_id, label, task_type, 0, False, message)
+                last_error = message
+                continue
+            try:
+                return self._call_once(system, prompt, task_type, provider, api_key,
+                                       base_url, model, account_id, label)
+            except LLMCallFailed as exc:
+                last_error = str(exc)
+                continue
+        raise LLMCallFailed("所有可用账号均调用失败，最后错误：{}".format(last_error))
+
+    def _call_once(self, system: str, prompt: str, task_type: str, provider: str,
+                   api_key: str, base_url: str, model: str,
+                   account_id: Optional[int], label: str) -> str:
         body: Dict[str, Any] = {
             "model": model,
             "messages": [

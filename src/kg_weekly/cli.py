@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from .config import ConfigError, apply_topic, load_config, project_paths, topic_db_name
+from .config import (ConfigError, apply_categories, apply_topic, load_config,
+                      project_paths, topic_db_name)
 from .db import Database
 from .fetch import SafeFetcher
 from .llm import LLMClient
@@ -26,9 +27,31 @@ def _open_database(project: Path, topic: Optional[str],
     return db, paths
 
 
+def _restore_categories(db: Database, config: Dict[str, Any]) -> None:
+    """恢复该入口上次 --categories 保存的分类覆盖（存在时覆盖配置默认值）。"""
+    saved = db.get_setting("topic_categories")
+    if saved:
+        config["discovery"]["categories"] = [c for c in saved.split(",") if c]
+
+
+def _apply_cli_categories(project: Path, db: Database, config: Dict[str, Any],
+                          raw: Optional[str]) -> None:
+    """应用 --categories：default 恢复 config.json 默认，其余校验后覆盖并持久化。"""
+    raw = str(raw or "").strip()
+    if not raw:
+        return
+    if raw.lower() == "default":
+        config["discovery"]["categories"] = load_config(project)["discovery"]["categories"]
+        db.set_setting("topic_categories", "")
+    else:
+        items = apply_categories(config, raw)
+        db.set_setting("topic_categories", ",".join(items))
+
+
 def build(project: Path, topic: Optional[str] = None) -> Tuple[Dict[str, Any], Dict[str, Path], Database, WeeklyPipeline]:
     config = apply_topic(load_config(project), topic)
     db, paths = _open_database(project, topic, config)
+    _restore_categories(db, config)
     fetcher = SafeFetcher(db, config, paths["data"] / "network.lock")
     llm = LLMClient(db, config)
     pipeline = WeeklyPipeline(project, db, config, fetcher, llm)
@@ -53,6 +76,10 @@ def main() -> None:
     run_cmd.add_argument("--force", action="store_true", help="忽略本周已抓取标记，强制重新抓取 arXiv")
     run_cmd.add_argument("--dry-run", action="store_true", help="仅校验配置并输出状态，不访问网络/LLM")
     run_cmd.add_argument("--topic", type=str, default=None, help=topic_help)
+    run_cmd.add_argument(
+        "--categories", type=str, default=None,
+        help="覆盖 arXiv 分类（逗号分隔，如 cs.AI,q-bio.BM）；default 恢复配置默认值。非默认值会持久化到该入口",
+    )
     report_cmd = commands.add_parser("report", help="仅用已有数据重新生成 HTML 周报（不访问网络）")
     report_cmd.add_argument("--topic", type=str, default=None, help=topic_help)
     status_cmd = commands.add_parser("status", help="查看论文数、预算用量与访问状态")
@@ -62,6 +89,9 @@ def main() -> None:
     enable = commands.add_parser("enable-access", help="人工确认熔断原因后重新开启网络访问")
     enable.add_argument("--confirm", action="store_true", help="确认已检查熔断原因")
     enable.add_argument("--topic", type=str, default=None, help=topic_help)
+    prune_cmd = commands.add_parser("prune", help="清理过期的审计/用量/同步记录（默认保留 90 天）")
+    prune_cmd.add_argument("--days", type=int, default=90, help="保留天数（默认 90，最小 1）")
+    prune_cmd.add_argument("--topic", type=str, default=None, help=topic_help)
     args = parser.parse_args()
 
     project = args.project.expanduser().resolve()
@@ -69,6 +99,8 @@ def main() -> None:
         if args.command == "run" and args.dry_run:
             config = apply_topic(load_config(project), args.topic)  # 校验配置本身
             db, paths = _open_database(project, args.topic, config)
+            _restore_categories(db, config)
+            _apply_cli_categories(project, db, config, getattr(args, "categories", None))
             output({"status": "config_ok",
                     "topic": config["_topic"],
                     "site": config["site"],
@@ -84,6 +116,7 @@ def main() -> None:
         config, paths, db, pipeline = build(project, args.topic)
         try:
             if args.command == "run":
+                _apply_cli_categories(project, db, config, getattr(args, "categories", None))
                 output(pipeline.run(force=args.force))
             elif args.command == "report":
                 output(pipeline.build_report())
@@ -98,6 +131,10 @@ def main() -> None:
                     parser.error("必须检查熔断原因后显式添加 --confirm")
                 db.enable_access()
                 output({"ok": True, "access_enabled": db.access_enabled()})
+            elif args.command == "prune":
+                days = max(1, int(args.days))
+                output({"ok": True, "retention_days": days,
+                        "pruned": db.prune_audit(days)})
         finally:
             db.close()
     except ConfigError as exc:

@@ -13,7 +13,7 @@
 | --- | --- |
 | 🎯 任意方向追踪 | 默认知识图谱（KG），`--topic` 一键切换到 llm / rag / 多模态等任意领域；多方向并行、数据库与预算彼此独立 |
 | 🏅 本地规则评分 | 总分 = 相关性 ×0.7 + 靠谱度 ×0.3（机构白名单、作者历史影响力、引用数分层） |
-| 🤖 AI 中文解读 | Top 12 拉取全文精读：白话总结、生活类比、生活与工作意义、靠谱度、术语、自测题 |
+| 🤖 AI 中文解读 | Top 12 拉取全文精读：白话总结、生活类比、生活与工作意义、靠谱度、术语、自测题；多账号失败自动切换 |
 | 🎖️ 可靠度徽章 | 每篇论文标注 机构 / 引用 / 评分 / 代码 / 应用型，一眼判断成色 |
 | 📊 单文件周报 | 内联 CSS + SVG 图标，零外部资源，浏览器直接打开即可分享 |
 | 🛡️ 克制联网 | 域名白名单、周请求预算、最小间隔、熔断保护、跨平台文件锁 |
@@ -71,11 +71,12 @@
 | `run.bat report` | 用已有数据重新生成 HTML，不访问网络 |
 | `run.bat status` | 论文数 / LLM 本周用量 / 请求预算 / 访问状态 |
 | `run.bat reset-budget` | 手动重置周 token 预算计数 |
+| `run.bat prune --days 90` | 清理过期审计/用量/同步记录（默认保留 90 天；可加 `--topic` 清理指定入口） |
 | `run.bat enable-access --confirm` | 人工确认熔断原因后重新开启网络访问 |
 
 ### 🔑 关键词入口（--topic）
 
-默认入口是知识图谱（kg）。想按其他关键词爬取、解读，在 `run` / `report` / `status` / `reset-budget` 上加 `--topic`：
+默认入口是知识图谱（kg）。想按其他关键词爬取、解读，在 `run` / `report` / `status` / `reset-budget` / `prune` / `enable-access` 上加 `--topic`：
 
 ```bat
 run.bat run --topic llm        rem 换成 llm 关键词：按 [llm] 爬取 arXiv、评分、AI 解读，输出 LLM-前沿论文解读-YYYY-MM-DD.html
@@ -87,12 +88,13 @@ run.bat status --topic llm     rem 查看 llm 入口的状态
 - 每个入口使用**独立数据库** `data\papers-<关键词>.db`（默认入口仍是 `papers.db`），抓取周标记、周 token 预算彼此独立、互不干扰
 - AI 卡片与精读的提示词也会按关键词调整（如“与「llm」方向的关系”）
 - 提示：arXiv 论文元数据是英文，关键词建议用英文（如 `llm`、`rag`、`multimodal`、`temporal knowledge graph`）
+- **换非 CS 领域要加 `--categories`**：默认抓取 6 个 `cs.*` 分类，追踪生物/物理等方向时用 `run.bat run --topic bio --categories q-bio.BM,q-bio.GN` 覆盖分类（会持久化到该入口，`default` 恢复配置默认；换分类后需 `--force` 重新抓取）
 
 ### 🌍 不止知识图谱：任何领域的前沿追踪
 
 这条流水线本身不绑定知识图谱，`--topic` 是最快捷的切换方式，深度定制则改 `config.json`：
 
-- **一键换领域**：`run.bat run --topic "large language model"` 会把抓取短语与核心评分关键词换成该方向，周报标题、独立数据库、LLM 提示词全部跟随，输出 `LLM-前沿论文解读-YYYY-MM-DD.html`。
+- **一键换领域**：`run.bat run --topic "large language model"` 会把抓取短语与核心评分关键词换成该方向，周报标题、独立数据库、LLM 提示词全部跟随，输出 `LARGE-LANGUAGE-MODEL-前沿论文解读-YYYY-MM-DD.html`。
 - **多领域并行**：每个入口有独立的数据库与周 token 预算，每周可同时产出多个方向的周报，互不干扰（arXiv 礼貌间隔按所有入口共享）。
 - **深度定制**：改 `config.json` 的 `discovery.categories` / `search_phrases`（抓取范围）、`keywords.core`（评分关键词）、`reliability.institution_whitelist`（靠谱机构），就能追踪任意 arXiv 领域——药物发现、自动驾驶、AI4Science……把机构白名单换成对应领域的顶级机构后评分更准。
 
@@ -127,18 +129,19 @@ kg-weekly/
 ├── config.json              # 分类/短语/关键词/白名单/预算/LLM 全部配置
 ├── README.md / DESIGN.md    # 使用文档与设计说明
 ├── src/kg_weekly/
-│   ├── cli.py               # 命令行入口（run/report/status/reset-budget/enable-access）
-│   ├── config.py            # 配置加载与校验（含 --topic 入口、local_config.json 合并）
+│   ├── __init__.py          # 包信息（名称与版本）
+│   ├── cli.py               # 命令行入口（run/report/status/reset-budget/enable-access/prune）
+│   ├── config.py            # 配置加载与校验（含 --topic/--categories 入口、local_config.json 合并）
 │   ├── db.py                # SQLite schema 与查询（论文/用量/审计/周标记/熔断）
 │   ├── fetch.py             # 跨平台文件锁 + 白名单 + 周请求预算 + 熔断 + 审计
-│   ├── arxiv.py             # arXiv API 查询 URL 构造 + Atom 解析（含 comment 字段）
+│   ├── arxiv.py             # arXiv API 查询 URL 构造 + Atom 解析（含 comment 字段）+ HTML 全文提取
 │   ├── openalex.py          # OpenAlex 批量查询（引用/机构/venue/作者影响力）
 │   ├── ranking.py           # 相关性/靠谱度评分
-│   ├── llm.py               # OpenAI 兼容 LLM 客户端（deepseek-flash，关思考模式）
+│   ├── llm.py               # OpenAI 兼容 LLM 客户端（deepseek-flash，关思考模式，多账号故障转移）
 │   ├── pipeline.py          # 六步周流水线编排（幂等可重入）
 │   └── report.py            # 单文件 HTML 周报生成（折叠精读、内联 SVG 图标）
 └── 仅本地目录（已被 .gitignore 排除，不入仓库）：
-    ├── tests/               # 87 个离线测试（mock，不触网）
+    ├── tests/               # 96 个离线测试（mock，不触网）
     ├── data/                # SQLite 数据库、缓存、锁
     ├── out/                 # 周报输出目录
     └── local_config.json    # 本机私有配置（API Key）
@@ -146,6 +149,7 @@ kg-weekly/
 
 ## ⚙️ 配置要点
 
+- `safety.allowed_hosts / *_requests_per_week / minimum_request_interval_seconds`：域名白名单、周请求预算与最小间隔（克制联网的核心开关）
 - `discovery.categories / search_phrases`：抓取范围，可自行增删 KG 相关短语
 - `keywords.core / applied_signals / code_signals`：评分信号词
 - `reliability.institution_whitelist`：可信机构白名单
@@ -155,14 +159,18 @@ kg-weekly/
 
 ## 🛡️ 安全与克制设计
 
-- 只允许访问白名单域名（arxiv.org、export.arxiv.org、api.openalex.org），且拒绝跟随重定向（白名单只校验初始 URL，跟随会绕过校验）
+- 只允许访问白名单域名（arxiv.org、export.arxiv.org、rss.arxiv.org、api.openalex.org），且拒绝跟随重定向（白名单只校验初始 URL，跟随会绕过校验）
 - 响应体上限 20 MB，异常上游无法耗尽内存
 - 周请求预算（自动 30 次 / 用户 12 次）与最小间隔（默认 10 秒，arXiv 要求 ≥3 秒）
 - 内容类型异常或 403/429 自动熔断，人工确认后 `enable-access --confirm` 恢复
 - 跨进程文件锁（Windows `msvcrt.locking` / POSIX `fcntl.flock`）
 - 删除 AI 账号不丢历史用量审计（provider_usage 保留账号名）
+- LLM 调用按优先级遍历可用账号，失败自动顺延到下一个并进入冷却（多账号故障转移）
 - 每周 LLM 预算自动按自然周重置（跨周自动前滚，无需手动 reset-budget）
 - LLM 卡片与精读输出经字段收敛（控制字符过滤、长度截断、枚举校验、结构规范化）
+- 精读数量受 user 请求预算约束（`top_deep ≤ user_requests_per_week`，配置校验强制）
+- `run.bat prune` 清理过期审计/用量/同步记录（默认保留 90 天），防止审计表无限增长
+- 周报外链只允许 http/https 协议（防污染链接注入 `javascript:` 等）
 
 注意事项：
 
@@ -178,13 +186,14 @@ kg-weekly/
 python -m unittest discover -s tests -v
 ```
 
-87 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝）、配置校验（含档位乱序/非整数）、数据库（含周预算自动前滚与跨入口请求间隔）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言与卡片/精读字段收敛）、OpenAlex 解析、周报 HTML 结构（含去重统计）、CLI 命令与完整流水线。
+96 个测试全部离线（mock 网络与 LLM），覆盖 Atom 解析（含 UTF-16 拒绝与未闭合 script 恢复）、配置校验（含档位乱序/非整数/精读超预算）、数据库（含周预算自动前滚、跨入口请求间隔与审计清理）、跨平台锁、评分公式（含机构词边界）、LLM 适配器（含「思考模式已关闭」断言、卡片/精读字段收敛、多账号故障转移、尾部垃圾 JSON 容忍）、OpenAlex 解析、周报 HTML 结构（含去重统计与外链协议白名单）、CLI 命令（含 --categories 持久化与 prune）与完整流水线。
 
 ## ❓ 常见问题
 
 - 🔑 **`LLMUnavailable`**：没配 API Key。写入 `local_config.json` 的 `llm.api_key`（推荐，本机私有不落库），或设置 `DEEPSEEK_API_KEY` 环境变量。
 - 💸 **`BudgetExceeded`**：本周 token 预算用完，`run.bat reset-budget` 可重置；或调大 `llm.weekly_token_budget`。
 - ⛔ **`AccessPaused`**：网络访问被熔断（异常内容类型或 403/429），先检查原因再 `run.bat enable-access --confirm`。
+- ⚙️ **`pipeline.top_deep 不能超过 safety.user_requests_per_week`**：每篇精读要拉一次 HTML 全文（计入 user 请求预算），调大精读数量时需同步调大 `safety.user_requests_per_week`。
 - 📭 **`arXiv 返回 0 条结果`**：查询异常（如短语语法问题），检查 `discovery.search_phrases`。
 - 🆕 **新论文引用数很低**：正常现象。刚发布一周的论文普遍 0 引用，此时靠谱度主要由机构白名单与作者历史影响力决定，周报脚注里有同样说明。
 

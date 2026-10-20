@@ -123,6 +123,14 @@ def esc(value: Any) -> str:
     return html.escape(str(value if value is not None else ""))
 
 
+def _safe_url(value: Any) -> str:
+    """外链只允许 http/https：防止被污染的 upstream 注入 javascript: 等协议。"""
+    url = str(value or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    return url
+
+
 # 内联 SVG 知识图谱拓扑图标：报告是单文件、零外部资源，图标也必须内联。
 _LOGO_SVG = (
     '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" '
@@ -255,7 +263,7 @@ def _deep_card(paper: Dict[str, Any], rank: int) -> str:
         'rel="noopener">打开原论文 ↗</a></div></div></details>'
         .format(summary, esc(authors), esc(paper.get("published_at") or ""),
                 esc(detail.get("basis") or "摘要"), _badges(paper), "".join(sections),
-                esc(paper.get("abs_url", "")))
+                esc(_safe_url(paper.get("abs_url"))))
     )
 
 
@@ -268,7 +276,7 @@ def _list_card(paper: Dict[str, Any]) -> str:
         '<p class="one-liner">{}</p>{}<div><a class="ext" href="{}" target="_blank" '
         'rel="noopener">打开原论文 ↗</a></div></article>'
         .format(esc(title_zh), esc(paper.get("title", "")), esc(one_liner),
-                _badges(paper), esc(paper.get("abs_url", "")))
+                _badges(paper), esc(_safe_url(paper.get("abs_url"))))
     )
 
 

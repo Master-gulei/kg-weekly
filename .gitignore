@@ -14,9 +14,3 @@ local_config.json
 
 # 测试只保留在本地（仓库只推核心源码，如需开源测试再移除本行）
 tests/
-
-# 项目前端和配置属于源码；覆盖仓库根目录对这些扩展名的通用忽略规则。
-!static/
-!static/*.html
-!static/*.css
-!static/*.js

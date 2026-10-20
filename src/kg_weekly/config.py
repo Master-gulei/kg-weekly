@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ConfigError(ValueError):
@@ -80,6 +80,11 @@ def load_config(project: Path) -> Dict[str, Any]:
         raise ConfigError("pipeline.top_cards 必须至少为 1")
     if _config_int(pipeline, "top_deep", 0, "pipeline.top_deep") < 1:
         raise ConfigError("pipeline.top_deep 必须至少为 1")
+    # 每篇精读需要拉取一次 HTML 全文（计入 user 模式请求预算），精读数量不能超过该预算。
+    if _config_int(pipeline, "top_deep", 0, "pipeline.top_deep") > \
+            _config_int(safety, "user_requests_per_week", 0, "safety.user_requests_per_week"):
+        raise ConfigError(
+            "pipeline.top_deep 不能超过 safety.user_requests_per_week（精读需要拉取 HTML 全文）")
     return data
 
 
@@ -117,6 +122,27 @@ def apply_topic(config: Dict[str, Any], topic: Optional[str]) -> Dict[str, Any]:
     display = topic.upper() if topic.isascii() else topic
     config["site"]["name"] = "{} 前沿论文解读".format(display)
     return config
+
+
+# arXiv 分类：主分类（如 cs / math-ph / q-bio）后可选子分类；
+# 子分类一般为两位大写，physics.acc-ph 是唯一的 3 位小写例外。
+_CATEGORY_RE = re.compile(r"^[a-z-]+(\.[A-Z]{2}|\.acc-ph)?$")
+
+
+def apply_categories(config: Dict[str, Any], categories: str) -> List[str]:
+    """解析 --categories 参数并覆盖 discovery.categories（逗号分隔）。
+
+    分类必须形如 cs.AI / math-ph / q-bio.BM，非法格式抛 ConfigError。
+    """
+    items = [c.strip() for c in str(categories).split(",") if c.strip()]
+    if not items:
+        raise ConfigError("--categories 至少需要一个分类（如 cs.AI,cs.LG）")
+    for item in items:
+        if not _CATEGORY_RE.fullmatch(item):
+            raise ConfigError(
+                "非法 arXiv 分类：{!r}（形如 cs.AI / math-ph / q-bio.BM）".format(item))
+    config["discovery"]["categories"] = items
+    return items
 
 
 def _topic_slug(topic: Optional[str]) -> str:

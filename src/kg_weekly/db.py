@@ -263,6 +263,25 @@ class Database:
         )
         self.con.commit()
 
+    # ---------- 审计清理 ----------
+
+    def prune_audit(self, retention_days: int = 90) -> Dict[str, int]:
+        """清理超过保留期的审计记录（默认 90 天），防止审计表无限增长。
+
+        只清理审计/用量/同步记录，论文数据不动。
+        """
+        days = max(1, int(retention_days))
+        cutoff = int(time.time()) - days * 86400
+        pruned: Dict[str, int] = {}
+        for table, column in (("network_requests", "requested_at"),
+                              ("provider_usage", "created_at"),
+                              ("sync_runs", "started_at")):
+            cur = self.con.execute(
+                "DELETE FROM {} WHERE {}<?".format(table, column), (cutoff,))
+            pruned[table] = cur.rowcount
+        self.con.commit()
+        return pruned
+
     # ---------- 论文 ----------
 
     def upsert_paper(self, paper: Dict[str, Any]) -> str:
