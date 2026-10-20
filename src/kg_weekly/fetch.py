@@ -81,9 +81,24 @@ def _default_opener():
 
 
 # purpose -> 期望的内容类型（异常类型会触发熔断或报错）
-_XML_PURPOSES = ("arxiv_query", "daily_feed")
+_XML_PURPOSES = ("arxiv_query",)
 _JSON_PURPOSES = ("openalex_batch",)
 _HTML_PURPOSES = ("paper_html",)
+
+
+def _norm_host(value: str) -> str:
+    """主机名归一化：小写、去空格与尾点，Unicode 域名转 punycode。
+
+    与 urlparse 的 hostname 对齐比较；无法归一化（如含端口的配置项）返回空串，
+    永不命中白名单 → 拒绝（fail-closed）。
+    """
+    host = str(value).strip().lower().rstrip(".")
+    if not host or ":" in host:
+        return ""
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return ""
 
 
 class SafeFetcher:
@@ -96,6 +111,13 @@ class SafeFetcher:
         self.lock_path = lock_path
         self.opener = opener or _default_opener()
         self.sleeper = sleeper
+        # 白名单归一化（小写/尾点/IDN）：urlparse 会把主机名小写，配置项大小写、
+        # 空格、尾点或 Unicode 域名写法不一致时也能正确命中；归一化失败者永不命中（fail-closed）。
+        self.allowed_hosts = {
+            _norm_host(host)
+            for host in (config.get("safety") or {}).get("allowed_hosts", [])
+            if _norm_host(host)
+        }
 
     def fetch(self, url: str, *, mode: str, purpose: str, accept: str,
               optional_404: bool = False) -> Optional[bytes]:
@@ -103,7 +125,8 @@ class SafeFetcher:
             raise ValueError("mode 必须是 automatic 或 user")
         parsed = urlparse(url)
         safety = self.config["safety"]
-        if parsed.scheme != "https" or parsed.hostname not in set(safety["allowed_hosts"]):
+        host = _norm_host(parsed.hostname or "")
+        if parsed.scheme != "https" or host not in self.allowed_hosts:
             raise ValueError("拒绝访问未授权地址：{}".format(url))
         with file_lock(self.lock_path):
             if not self.db.access_enabled():
@@ -115,7 +138,7 @@ class SafeFetcher:
             wait = self.db.last_request_time() + interval - int(time.time())
             if wait > 0:
                 self.sleeper(wait)
-            request_id = self.db.start_request(mode, purpose, parsed.hostname or "")
+            request_id = self.db.start_request(mode, purpose, host)
             request = urllib.request.Request(url, headers={
                 "User-Agent": "kg-weekly/0.1 (personal research reader)",
                 "Accept": accept,

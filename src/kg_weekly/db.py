@@ -165,12 +165,6 @@ class Database:
 
     # ---------- 时间与预算 ----------
 
-    @staticmethod
-    def _local_midnight(days_ago: int = 0) -> int:
-        today = datetime.now()
-        base = datetime(today.year, today.month, today.day) - timedelta(days=days_ago)
-        return int(time.mktime(base.timetuple()))
-
     def local_week_start(self, now: Optional[datetime] = None) -> int:
         value = now or datetime.now()
         monday = datetime(value.year, value.month, value.day) - timedelta(days=value.weekday())

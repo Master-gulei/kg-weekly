@@ -161,7 +161,8 @@ class WeeklyPipeline:
 
     # ---------- 步骤 5：AI 精读 ----------
 
-    def _ensure_full_text(self, paper: Dict[str, Any]) -> Tuple[str, str]:
+    def ensure_full_text(self, paper: Dict[str, Any]) -> Tuple[str, str]:
+        """返回 (全文, 来源)；本地服务按需精读与流水线共用（跨模块公开契约）。"""
         arxiv_id = str(paper["arxiv_id"])
         full_text = self.db.full_text(arxiv_id)
         source = paper.get("full_text_source") or "摘要"
@@ -189,7 +190,7 @@ class WeeklyPipeline:
         failures: List[str] = []
         for paper in papers:
             try:
-                full_text, source = self._ensure_full_text(paper)
+                full_text, source = self.ensure_full_text(paper)
                 detail = self.llm.deep_read(paper, full_text, source)
                 self.db.set_detail(str(paper["arxiv_id"]), detail)
                 done += 1

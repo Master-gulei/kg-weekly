@@ -293,7 +293,9 @@ class LLMClient:
                     raise LLMCallFailed(message)
                 value = json.loads(raw.decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as exc:
-            message = "HTTP {}: {}".format(exc.code, exc.read().decode("utf-8", errors="replace")[:300])
+            # 限量读取错误体：异常页面可能很大，先限量读再截断
+            message = "HTTP {}: {}".format(
+                exc.code, exc.read(400).decode("utf-8", errors="replace")[:300])
             cooldown = 3600 if exc.code in (429, 402) or "limit" in message.lower() else self.failure_cooldown_seconds
             self.db.record_provider_result(account_id, label, task_type, 0, False, message, cooldown)
             raise LLMCallFailed(message)
