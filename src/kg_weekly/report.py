@@ -345,7 +345,7 @@ _SCRIPT = """<script>
         }
       })
       .catch(function(){
-        box.innerHTML='<p class="sec-note">无法连接本地解读服务：请先运行 run.bat serve，然后通过 http://127.0.0.1:8000 打开周报再试。</p>';
+        box.innerHTML='<p class="sec-note">无法连接本地解读服务：请先双击 serve.bat 启动服务，再通过 http://127.0.0.1:8000 打开周报（直接双击 HTML 文件打开时该按钮不可用）。</p>';
         btn.disabled=false;btn.textContent='重试 AI 解读';
       });
     });
@@ -406,7 +406,7 @@ def build_report(site_name: str, label: str, deep_papers: List[Dict[str, Any]],
 {}
 
 <h2 class="sec">其余论文卡片</h2>
-<p class="sec-note">按综合评分排序，卡片由 AI 依据标题与摘要生成；点卡片右下角「AI 解读」可为任意一篇生成完整精读（需先运行 run.bat serve）。</p>
+<p class="sec-note">按综合评分排序，卡片由 AI 依据标题与摘要生成；点卡片右下角「AI 解读」可为任意一篇生成完整精读（需先双击 serve.bat 启动服务，并通过 http://127.0.0.1:8000 打开周报）。</p>
 <div class="paper-list">{}</div>
 
 <footer>
