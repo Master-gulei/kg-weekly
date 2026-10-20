@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from .config import ConfigError, load_config, topic_file_prefix
 from .fetch import AccessPaused, RequestBudgetExceeded
@@ -185,10 +186,19 @@ def make_server(project: Path, port: int = 8000, topic: Optional[str] = None) ->
     return ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
 
 
+def _open_browser(url: str) -> None:
+    """服务就绪后自动用默认浏览器打开周报（失败静默，不影响服务）。"""
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 def run_server(project: Path, port: int = 8000, topic: Optional[str] = None) -> None:
     """启动本地周报浏览与按需精读服务，阻塞直到 Ctrl+C。
 
     topic 为服务默认入口（首页不带 ?topic= 参数时生效），None 表示默认 kg。
+    绑定成功后自动用默认浏览器打开周报（异步，失败静默）。
     """
     project = Path(project).resolve()
     load_config(project)  # 启动前先校验配置，尽早暴露错误
@@ -200,9 +210,15 @@ def run_server(project: Path, port: int = 8000, topic: Optional[str] = None) -> 
     host, bound_port = httpd.server_address[:2]
     print("KG 周报服务已启动：http://{}:{}".format(host, bound_port))
     print("按 Ctrl+C 停止。API Key 只保存在本机，不会写入任何 HTML 文件。")
+    url = "http://{}:{}{}".format(host, bound_port,
+                                  "?topic={}".format(quote(topic)) if topic else "")
+    timer = threading.Timer(0.8, _open_browser, [url])
+    timer.daemon = True  # 进程退出时不再等待未触发的定时器，避免退出后仍弹浏览器
+    timer.start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        timer.cancel()
         httpd.server_close()
